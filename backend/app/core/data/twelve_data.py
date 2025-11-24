@@ -176,12 +176,32 @@ class TwelveDataProvider(DataProvider):
             "outputsize": min(limit, 5000),
         }
         
+        # Calculate start_date if only end_date is provided
+        # This ensures we get the requested number of candles
+        if end and not start:
+            # Calculate how far back to go based on timeframe and limit
+            interval_map = {
+                "1min": timedelta(minutes=1),
+                "5min": timedelta(minutes=5),
+                "15min": timedelta(minutes=15),
+                "30min": timedelta(minutes=30),
+                "1h": timedelta(hours=1),
+                "4h": timedelta(hours=4),
+                "1day": timedelta(days=1),
+                "1week": timedelta(weeks=1),
+            }
+            interval = interval_map.get(td_interval, timedelta(hours=1))
+            # Add 50% buffer to account for weekends/holidays
+            start = end - (interval * limit * 1.5)
+            print(f"📅 Calculated start_date: {start} (to get {limit} candles before {end})")
+        
         if start:
             params["start_date"] = start.strftime("%Y-%m-%d %H:%M:%S")
         if end:
             params["end_date"] = end.strftime("%Y-%m-%d %H:%M:%S")
         
         print(f"🌐 Fetching {symbol} {timeframe} from Twelve Data API...")
+        print(f"   Parameters: start={start}, end={end}, limit={limit}")
         
         async with aiohttp.ClientSession() as session:
             async with session.get(url, params=params) as response:
