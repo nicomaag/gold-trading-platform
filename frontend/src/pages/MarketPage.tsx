@@ -39,7 +39,7 @@ export const MarketPage: React.FC = () => {
                 const oldestTime = dataRef.current[0].time as number; // Unix timestamp
                 const endDate = new Date(oldestTime * 1000).toISOString();
                 url += `&end=${endDate}`;
-                console.log(`📥 Loading more data before ${endDate}`);
+                console.log(`📥 Loading more. DataRef has ${dataRef.current.length} candles. Oldest in ref: ${endDate}`);
             }
 
             console.log(`🌐 Fetching: ${url}`);
@@ -73,14 +73,18 @@ export const MarketPage: React.FC = () => {
 
             if (isLoadMore) {
                 // Prepend new data, filtering out duplicates
-                const existingTimes = new Set(data.map(d => d.time as number));
+                // CRITICAL: Use dataRef.current, not data (which is stale in this closure)
+                const currentData = dataRef.current;
+                const existingTimes = new Set(currentData.map(d => d.time as number));
                 const uniqueNewData = chartData.filter((d: any) => !existingTimes.has(d.time as number));
-                const newData = [...uniqueNewData, ...data];
+                const newData = [...uniqueNewData, ...currentData];
 
                 // Log the oldest candle date
                 if (newData.length > 0) {
                     const oldestDate = new Date((newData[0].time as number) * 1000).toISOString();
-                    console.log(`✅ Added ${uniqueNewData.length} new candles. Total: ${newData.length}. Oldest: ${oldestDate}`);
+                    const newestDate = new Date((newData[newData.length - 1].time as number) * 1000).toISOString();
+                    console.log(`✅ Added ${uniqueNewData.length} new candles. Total: ${newData.length}`);
+                    console.log(`   Range: ${oldestDate} to ${newestDate}`);
                 }
 
                 setData(newData);
