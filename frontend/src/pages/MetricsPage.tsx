@@ -76,7 +76,7 @@ export default function MetricsPage() {
             <div className="flex items-center justify-between">
                 <div>
                     <p className="text-sm text-gray-600 mb-1">{label}</p>
-                    <p className="text-2xl font-bold">{value}</p>
+                    <p className="text-2xl font-bold text-gray-900">{value}</p>
                 </div>
                 <div className={`p-3 rounded-full ${color}`}>
                     <Icon className="w-6 h-6 text-white" />
@@ -173,8 +173,8 @@ export default function MetricsPage() {
                                 className="bg-red-500 h-2 rounded-full"
                                 style={{
                                     width: `${metrics.total_requests > 0
-                                            ? (metrics.cache_misses / metrics.total_requests) * 100
-                                            : 0
+                                        ? (metrics.cache_misses / metrics.total_requests) * 100
+                                        : 0
                                         }%`,
                                 }}
                             />

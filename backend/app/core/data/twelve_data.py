@@ -225,10 +225,18 @@ class TwelveDataProvider(DataProvider):
         
         query = query.order_by(MarketData.timestamp.asc())
         
+        # Log query parameters
+        print(f"🔍 Querying DB: symbol={symbol}, timeframe={timeframe}, start={start}, end={end}, limit={limit}")
+        
         result = await db.execute(query)
         db_data = result.scalars().all()
         
-        print(f"📊 Found {len(db_data)} candles in DB for {symbol} {timeframe}")
+        if len(db_data) > 0:
+            db_start_date = db_data[0].timestamp
+            db_end_date = db_data[-1].timestamp
+            print(f"📊 Found {len(db_data)} candles in DB from {db_start_date} to {db_end_date}")
+        else:
+            print(f"📊 Found 0 candles in DB for {symbol} {timeframe}")
         
         # Determine what data we need to fetch
         fetch_ranges = []
