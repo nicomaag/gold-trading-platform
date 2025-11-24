@@ -1,6 +1,6 @@
 {
-  "cache_hits": 10,
-  "cache_misses": 13,
+  "cache_hits": 14,
+  "cache_misses": 14,
   "partial_cache_hits": 0,
-  "api_calls": 13
+  "api_calls": 14
 }

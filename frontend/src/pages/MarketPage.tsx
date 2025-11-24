@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { CandleChart } from '../components/CandleChart';
 import { type CandlestickData } from 'lightweight-charts';
 
@@ -9,31 +9,29 @@ export const MarketPage: React.FC = () => {
     const [timeframe, setTimeframe] = useState('1h');
     const [data, setData] = useState<CandlestickData[]>([]);
     const [loading, setLoading] = useState(false);
-    const [loadingMore, setLoadingMore] = useState(false);
     const [autoUpdate, setAutoUpdate] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [hasMore, setHasMore] = useState(true);
 
-    const fetchData = async (loadMore: boolean = false) => {
-        if (loadMore) {
-            setLoadingMore(true);
-        } else {
-            setLoading(true);
+    const loadingRef = useRef(false);
+    const dataRangeRef = useRef<{ min: number; max: number } | null>(null);
+
+    const fetchDataForRange = async (startTime: number, endTime: number) => {
+        if (loadingRef.current) {
+            console.log('⏸️ Already loading, skipping request');
+            return;
         }
+
+        loadingRef.current = true;
         setError(null);
 
         try {
-            let url = `http://localhost:8000/api/market/candles?symbol=${symbol}&timeframe=${timeframe}&limit=1000`;
+            const startDate = new Date(startTime * 1000).toISOString();
+            const endDate = new Date(endTime * 1000).toISOString();
 
-            // If loading more, fetch data BEFORE the oldest candle
-            if (loadMore && data.length > 0) {
-                const oldestTime = data[0].time as number;
-                const endDate = new Date(oldestTime * 1000).toISOString();
-                url += `&end=${endDate}`;
-                console.log(`📥 Loading more data before ${endDate}`);
-            }
+            const url = `http://localhost:8000/api/market/candles?symbol=${symbol}&timeframe=${timeframe}&start=${startDate}&end=${endDate}&limit=5000`;
 
-            console.log(`🌐 Fetching: ${url}`);
+            console.log(`🌐 Fetching data for visible range: ${startDate} to ${endDate}`);
+
             const response = await fetch(url);
             if (!response.ok) {
                 throw new Error('Failed to fetch data');
@@ -41,8 +39,7 @@ export const MarketPage: React.FC = () => {
             const rawData = await response.json();
 
             if (rawData.length === 0) {
-                console.log('📭 No more data available');
-                setHasMore(false);
+                console.log('📭 No data available for this range');
                 return;
             }
 
@@ -56,49 +53,116 @@ export const MarketPage: React.FC = () => {
 
             chartData.sort((a, b) => (a.time as number) - (b.time as number));
 
-            if (loadMore) {
-                // Prepend new data, filtering out duplicates
-                setData(prev => {
-                    const existingTimes = new Set(prev.map(d => d.time as number));
-                    const uniqueNewData = chartData.filter(d => !existingTimes.has(d.time as number));
-                    const combined = [...uniqueNewData, ...prev];
+            // Merge with existing data
+            setData(prev => {
+                const existingTimes = new Set(prev.map(d => d.time as number));
+                const uniqueNewData = chartData.filter(d => !existingTimes.has(d.time as number));
+                const combined = [...prev, ...uniqueNewData];
+                combined.sort((a, b) => (a.time as number) - (b.time as number));
 
-                    if (combined.length > 0) {
-                        const oldestDate = new Date((combined[0].time as number) * 1000).toISOString();
-                        const newestDate = new Date((combined[combined.length - 1].time as number) * 1000).toISOString();
-                        console.log(`✅ Added ${uniqueNewData.length} candles. Total: ${combined.length}`);
-                        console.log(`   Range: ${oldestDate} to ${newestDate}`);
-                    }
+                console.log(`✅ Loaded ${rawData.length} candles. Total in chart: ${combined.length}`);
 
-                    return combined;
-                });
-            } else {
-                if (chartData.length > 0) {
-                    const oldestDate = new Date((chartData[0].time as number) * 1000).toISOString();
-                    const newestDate = new Date((chartData[chartData.length - 1].time as number) * 1000).toISOString();
-                    console.log(`✅ Loaded ${chartData.length} candles from ${oldestDate} to ${newestDate}`);
+                // Update data range
+                if (combined.length > 0) {
+                    dataRangeRef.current = {
+                        min: combined[0].time as number,
+                        max: combined[combined.length - 1].time as number
+                    };
                 }
-                setData(chartData);
-                setHasMore(true);
+
+                return combined;
+            });
+        } catch (err: any) {
+            setError(err.message);
+            console.error('❌ Error:', err);
+        } finally {
+            loadingRef.current = false;
+        }
+    };
+
+    const handleVisibleRangeChange = (fromTime: number, toTime: number) => {
+        // Check if we need to load more data
+        const currentRange = dataRangeRef.current;
+
+        if (!currentRange) {
+            // No data yet, load initial range
+            fetchDataForRange(fromTime, toTime);
+            return;
+        }
+
+        // Calculate buffer (load data before we actually need it)
+        const rangeSize = toTime - fromTime;
+        const buffer = rangeSize * 0.5; // 50% buffer
+
+        // Check if we're approaching the edges
+        if (fromTime < currentRange.min + buffer) {
+            // Need older data
+            const newStart = fromTime - rangeSize;
+            const newEnd = currentRange.min;
+            console.log(`⬅️ Loading older data: ${new Date(newStart * 1000).toISOString()} to ${new Date(newEnd * 1000).toISOString()}`);
+            fetchDataForRange(newStart, newEnd);
+        }
+
+        if (toTime > currentRange.max - buffer) {
+            // Need newer data
+            const newStart = currentRange.max;
+            const newEnd = toTime + rangeSize;
+            console.log(`➡️ Loading newer data: ${new Date(newStart * 1000).toISOString()} to ${new Date(newEnd * 1000).toISOString()}`);
+            fetchDataForRange(newStart, newEnd);
+        }
+    };
+
+    const loadInitialData = async () => {
+        setLoading(true);
+        setError(null);
+
+        try {
+            const url = `http://localhost:8000/api/market/candles?symbol=${symbol}&timeframe=${timeframe}&limit=1000`;
+
+            console.log(`🌐 Loading initial data`);
+
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error('Failed to fetch data');
             }
+            const rawData = await response.json();
+
+            const chartData: CandlestickData[] = rawData.map((d: any) => ({
+                time: new Date(d.time).getTime() / 1000,
+                open: d.open,
+                high: d.high,
+                low: d.low,
+                close: d.close,
+            }));
+
+            chartData.sort((a, b) => (a.time as number) - (b.time as number));
+
+            if (chartData.length > 0) {
+                dataRangeRef.current = {
+                    min: chartData[0].time as number,
+                    max: chartData[chartData.length - 1].time as number
+                };
+                console.log(`✅ Loaded ${chartData.length} initial candles`);
+            }
+
+            setData(chartData);
         } catch (err: any) {
             setError(err.message);
             console.error('❌ Error:', err);
         } finally {
             setLoading(false);
-            setLoadingMore(false);
         }
     };
 
     useEffect(() => {
-        fetchData(false);
+        loadInitialData();
     }, [symbol, timeframe]);
 
     useEffect(() => {
         let interval: NodeJS.Timeout;
         if (autoUpdate) {
             interval = setInterval(() => {
-                fetchData(false);
+                loadInitialData();
             }, 5000);
         }
         return () => clearInterval(interval);
@@ -149,7 +213,7 @@ export const MarketPage: React.FC = () => {
                     </div>
 
                     <button
-                        onClick={() => fetchData(false)}
+                        onClick={loadInitialData}
                         className="bg-blue-600 text-white px-4 py-1 rounded hover:bg-blue-700 text-sm"
                         disabled={loading}
                     >
@@ -164,27 +228,15 @@ export const MarketPage: React.FC = () => {
                 </div>
             )}
 
-            <div className="space-y-4">
-                {/* Load More Button */}
-                {data.length > 0 && hasMore && (
-                    <div className="flex justify-center">
-                        <button
-                            onClick={() => fetchData(true)}
-                            disabled={loadingMore}
-                            className="bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                        >
-                            {loadingMore ? 'Loading older data...' : '⬅️ Load Older Data'}
-                        </button>
-                    </div>
+            <div className="bg-white p-4 rounded-lg shadow h-[600px]">
+                {loading && data.length === 0 ? (
+                    <div className="flex justify-center items-center h-full text-gray-500">Loading...</div>
+                ) : (
+                    <CandleChart
+                        data={data}
+                        onVisibleRangeChange={handleVisibleRangeChange}
+                    />
                 )}
-
-                <div className="bg-white p-4 rounded-lg shadow h-[600px]">
-                    {loading && data.length === 0 ? (
-                        <div className="flex justify-center items-center h-full text-gray-500">Loading...</div>
-                    ) : (
-                        <CandleChart data={data} />
-                    )}
-                </div>
             </div>
         </div>
     );
