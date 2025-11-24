@@ -1,0 +1,17 @@
+fastapi>=0.100.0
+uvicorn>=0.22.0
+sqlalchemy>=2.0.0
+aiosqlite>=0.19.0
+httpx>=0.24.0
+pandas>=2.0.0
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+backtrader>=1.9.78.123
+oandapyV20>=0.7.2
+alembic>=1.11.0
+
+# Testing
+pytest>=8.3.0
+pytest-asyncio>=0.24.0
+pytest-cov>=6.0.0

@@ -1,0 +1,26 @@
+[project]
+name = "gold-trading-platform-backend"
+version = "0.1.0"
+description = "Backend for Gold Trading Platform"
+authors = [
+    {name = "Antigravity", email = "antigravity@example.com"},
+]
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "sqlalchemy",
+    "aiosqlite",
+    "httpx",
+    "pandas",
+    "python-dotenv",
+    "pydantic",
+    "pydantic-settings",
+    "backtrader",
+    "oandapyV20",
+    "alembic",
+]
+requires-python = ">=3.11"
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
