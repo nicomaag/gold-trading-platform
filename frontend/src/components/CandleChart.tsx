@@ -46,7 +46,7 @@ export const CandleChart: React.FC<CandleChartProps> = ({ data, colors = {} }) =
 
         chart.timeScale().fitContent();
 
-        const newSeries = chart.addCandlestickSeries({
+        const newSeries = chart.addSeries(CandlestickSeries, {
             upColor: '#26a69a',
             downColor: '#ef5350',
             borderVisible: false,
