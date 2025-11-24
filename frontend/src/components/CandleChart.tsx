@@ -10,15 +10,12 @@ interface CandleChartProps {
         areaTopColor?: string;
         areaBottomColor?: string;
     };
-    onLoadMore?: () => void;
 }
 
-export const CandleChart: React.FC<CandleChartProps> = ({ data, colors = {}, onLoadMore }) => {
+export const CandleChart: React.FC<CandleChartProps> = ({ data, colors = {} }) => {
     const chartContainerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<IChartApi | null>(null);
     const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
-    const loadMoreTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-    const isLoadingMoreRef = useRef(false);
 
     const {
         backgroundColor = 'white',
@@ -49,7 +46,7 @@ export const CandleChart: React.FC<CandleChartProps> = ({ data, colors = {}, onL
 
         chart.timeScale().fitContent();
 
-        const newSeries = chart.addSeries(CandlestickSeries, {
+        const newSeries = chart.addCandlestickSeries({
             upColor: '#26a69a',
             downColor: '#ef5350',
             borderVisible: false,
@@ -62,39 +59,13 @@ export const CandleChart: React.FC<CandleChartProps> = ({ data, colors = {}, onL
         chartRef.current = chart;
         seriesRef.current = newSeries;
 
-        // Infinite scroll logic with debouncing
-        if (onLoadMore) {
-            chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-                // Trigger when user scrolls near the left edge (old data)
-                if (range && range.from < 0.5 && !isLoadingMoreRef.current) {
-                    // Clear any pending timeout
-                    if (loadMoreTimeoutRef.current) {
-                        clearTimeout(loadMoreTimeoutRef.current);
-                    }
-
-                    // Debounce the load more call
-                    loadMoreTimeoutRef.current = setTimeout(() => {
-                        isLoadingMoreRef.current = true;
-                        onLoadMore();
-                        // Reset flag after a delay to allow next load
-                        setTimeout(() => {
-                            isLoadingMoreRef.current = false;
-                        }, 2000);
-                    }, 500);
-                }
-            });
-        }
-
         window.addEventListener('resize', handleResize);
 
         return () => {
-            if (loadMoreTimeoutRef.current) {
-                clearTimeout(loadMoreTimeoutRef.current);
-            }
             window.removeEventListener('resize', handleResize);
             chart.remove();
         };
-    }, [backgroundColor, textColor, onLoadMore]);
+    }, [backgroundColor, textColor]);
 
     useEffect(() => {
         if (seriesRef.current) {
