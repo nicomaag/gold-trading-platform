@@ -73,19 +73,18 @@ export const MarketPage: React.FC = () => {
 
             if (isLoadMore) {
                 // Prepend new data, filtering out duplicates
-                setData(prev => {
-                    const existingTimes = new Set(prev.map(d => d.time as number));
-                    const uniqueNewData = chartData.filter((d: any) => !existingTimes.has(d.time as number));
-                    const newData = [...uniqueNewData, ...prev];
+                const existingTimes = new Set(data.map(d => d.time as number));
+                const uniqueNewData = chartData.filter((d: any) => !existingTimes.has(d.time as number));
+                const newData = [...uniqueNewData, ...data];
 
-                    // Log the oldest candle date
-                    if (newData.length > 0) {
-                        const oldestDate = new Date((newData[0].time as number) * 1000).toISOString();
-                        console.log(`✅ Added ${uniqueNewData.length} new candles. Total: ${newData.length}. Oldest: ${oldestDate}`);
-                    }
+                // Log the oldest candle date
+                if (newData.length > 0) {
+                    const oldestDate = new Date((newData[0].time as number) * 1000).toISOString();
+                    console.log(`✅ Added ${uniqueNewData.length} new candles. Total: ${newData.length}. Oldest: ${oldestDate}`);
+                }
 
-                    return newData;
-                });
+                setData(newData);
+                dataRef.current = newData; // CRITICAL: Update ref immediately
             } else {
                 if (chartData.length > 0) {
                     const oldestDate = new Date((chartData[0].time as number) * 1000).toISOString();
@@ -93,6 +92,7 @@ export const MarketPage: React.FC = () => {
                     console.log(`✅ Loaded ${chartData.length} candles from ${oldestDate} to ${newestDate}`);
                 }
                 setData(chartData);
+                dataRef.current = chartData; // Update ref immediately
             }
         } catch (err: any) {
             setError(err.message);

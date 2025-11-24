@@ -2,6 +2,9 @@ import aiohttp
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
 import asyncio
+import json
+import os
+from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 from sqlalchemy.dialects.sqlite import insert
@@ -9,13 +12,34 @@ from .base import DataProvider
 from app.models.market_data import MarketData
 
 
+# Metrics file path
+METRICS_FILE = Path("cache_metrics.json")
+
+# Load metrics from file if exists
+def load_metrics() -> Dict[str, int]:
+    if METRICS_FILE.exists():
+        try:
+            with open(METRICS_FILE, 'r') as f:
+                return json.load(f)
+        except:
+            pass
+    return {
+        "cache_hits": 0,
+        "cache_misses": 0,
+        "partial_cache_hits": 0,
+        "api_calls": 0,
+    }
+
+# Save metrics to file
+def save_metrics(metrics: Dict[str, int]):
+    try:
+        with open(METRICS_FILE, 'w') as f:
+            json.dump(metrics, f, indent=2)
+    except Exception as e:
+        print(f"⚠️ Failed to save metrics: {e}")
+
 # Global cache metrics (module-level, persists across provider instances)
-CACHE_METRICS = {
-    "cache_hits": 0,
-    "cache_misses": 0,
-    "partial_cache_hits": 0,
-    "api_calls": 0,
-}
+CACHE_METRICS = load_metrics()
 
 
 class TwelveDataProvider(DataProvider):
@@ -244,6 +268,7 @@ class TwelveDataProvider(DataProvider):
         if len(db_data) == 0:
             # No data in DB, fetch entire range
             CACHE_METRICS["cache_misses"] += 1
+            save_metrics(CACHE_METRICS)
             if start and end:
                 fetch_ranges.append((start, end))
             else:
@@ -286,6 +311,7 @@ class TwelveDataProvider(DataProvider):
                 CACHE_METRICS["partial_cache_hits"] += 1
             else:
                 CACHE_METRICS["cache_hits"] += 1
+            save_metrics(CACHE_METRICS)
         
         # Fetch missing data from API
         if fetch_ranges:
@@ -293,6 +319,7 @@ class TwelveDataProvider(DataProvider):
                 for fetch_start, fetch_end in fetch_ranges:
                     try:
                         CACHE_METRICS["api_calls"] += 1
+                        save_metrics(CACHE_METRICS)
                         new_candles = await self._fetch_from_api(
                             symbol, timeframe, fetch_start, fetch_end, limit
                         )
