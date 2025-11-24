@@ -22,19 +22,16 @@ async def get_candles(
     """
     provider = get_data_provider()
     
-    # Default to last N candles if no dates provided
-    if not start and not end:
-        # This logic depends on the provider, but usually providers handle "last N" 
-        # via limit if no dates are given, or we can set a wide range.
-        # For simplicity, let's just pass what we have to the provider.
-        pass
+    # Convert timezone-aware datetimes to naive (database stores naive datetimes)
+    start_naive = start.replace(tzinfo=None) if start else None
+    end_naive = end.replace(tzinfo=None) if end else None
         
     try:
         candles = await provider.get_historical_candles(
             symbol=symbol,
             timeframe=timeframe,
-            start=start,
-            end=end,
+            start=start_naive,
+            end=end_naive,
             limit=limit,
             db=db
         )
