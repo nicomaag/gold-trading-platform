@@ -52,7 +52,29 @@ class BacktestEngine:
         strategy = strategy_class(symbol, timeframe, params)
         strategy.on_backtest_start()
 
-        # 3. Simulation Loop
+        # 3. Run Simulation in Thread Pool
+        # This prevents the CPU-intensive simulation from blocking the main event loop
+        # allowing other API requests (like metrics) to be processed concurrently
+        import asyncio
+        loop = asyncio.get_running_loop()
+        
+        result = await loop.run_in_executor(
+            None,  # Use default executor
+            self._run_simulation,
+            strategy,
+            candles
+        )
+        
+        return result
+
+    def _run_simulation(
+        self, 
+        strategy: BaseStrategy, 
+        candles: List[Dict[str, Any]]
+    ) -> BacktestResult:
+        """
+        Synchronous simulation loop designed to run in a separate thread.
+        """
         balance = 10000.0 # Initial capital
         equity = balance
         position = 0.0
@@ -64,13 +86,7 @@ class BacktestEngine:
         trades: List[Trade] = []
         equity_curve = []
         
-        import asyncio
-        
-        for i, candle in enumerate(candles):
-            # Yield control to event loop every 100 candles to allow other requests (metrics) to run
-            if i % 100 == 0:
-                await asyncio.sleep(0)
-                
+        for candle in candles:
             # 0. Check SL/TP execution FIRST (Intra-candle price action)
             if position != 0:
                 executed_price = None
