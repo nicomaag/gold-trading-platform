@@ -83,95 +83,119 @@ export const CandleChart: React.FC<CandleChartProps> = ({ data, colors = {}, onL
             if (
                 param.point === undefined ||
                 !param.time ||
+                param.point.x < 0 ||
+                param.point.x > chartContainerRef.current!.clientWidth ||
+                param.point.y < 0 ||
+                param.point.y > chartContainerRef.current!.clientHeight
+            ) {
+                setTooltip(null);
+                (newSeries as any).setMarkers([]); // Clear markers
+            } else {
+                const data = param.seriesData.get(newSeries) as CandlestickData;
+                if (data) {
+                    setTooltip({
+                        x: param.point.x,
+                        y: param.point.y,
+                        data: data,
+                    });
+
+                    // Add marker to visualize selection
+                    (newSeries as any).setMarkers([
+                        {
+                            time: param.time as Time,
+                            position: 'aboveBar',
+                            color: '#2196F3',
+                            shape: 'arrowDown',
+                            text: 'Selected',
                         }
                     ]);
                 }
             }
         });
 
-window.addEventListener('resize', handleResize);
+        window.addEventListener('resize', handleResize);
 
-return () => {
-    window.removeEventListener('resize', handleResize);
-    chart.remove();
-};
+        return () => {
+            window.removeEventListener('resize', handleResize);
+            chart.remove();
+        };
     }, [backgroundColor, textColor]); // Re-create chart only if colors change (rare)
 
-// Handle Data Updates
-useEffect(() => {
-    if (!seriesRef.current || !chartRef.current) return;
+    // Handle Data Updates
+    useEffect(() => {
+        if (!seriesRef.current || !chartRef.current) return;
 
-    const currentDataLength = data.length;
-    const prevDataLength = prevDataLengthRef.current;
+        const currentDataLength = data.length;
+        const prevDataLength = prevDataLengthRef.current;
 
-    if (currentDataLength === 0) return;
+        if (currentDataLength === 0) return;
 
-    if (prevDataLength === 0) {
-        seriesRef.current.setData(data);
-        chartRef.current.timeScale().fitContent();
-        isInitialLoadRef.current = false;
-    }
-    else if (currentDataLength > prevDataLength) {
-        const addedCount = currentDataLength - prevDataLength;
-        const currentRange = chartRef.current.timeScale().getVisibleLogicalRange();
-
-        seriesRef.current.setData(data);
-
-        if (currentRange) {
-            chartRef.current.timeScale().setVisibleLogicalRange({
-                from: currentRange.from + addedCount,
-                to: currentRange.to + addedCount,
-            });
+        if (prevDataLength === 0) {
+            seriesRef.current.setData(data);
+            chartRef.current.timeScale().fitContent();
+            isInitialLoadRef.current = false;
         }
-    }
-    else {
-        seriesRef.current.setData(data);
-    }
+        else if (currentDataLength > prevDataLength) {
+            const addedCount = currentDataLength - prevDataLength;
+            const currentRange = chartRef.current.timeScale().getVisibleLogicalRange();
 
-    prevDataLengthRef.current = currentDataLength;
-}, [data]);
+            seriesRef.current.setData(data);
 
-return (
-    <div ref={chartContainerRef} style={{ width: '100%', position: 'relative' }}>
-        {tooltip && (
-            <div
-                className="text-gray-900" // Force dark text
-                style={{
-                    position: 'absolute',
-                    left: tooltip.x,
-                    top: tooltip.y,
-                    zIndex: 20,
-                    backgroundColor: 'rgba(255, 255, 255, 0.95)', // Slightly more opaque
-                    border: '1px solid #999', // Darker border
-                    borderRadius: '4px',
-                    padding: '8px',
-                    boxShadow: '0 4px 6px rgba(0,0,0,0.2)', // Stronger shadow
-                    fontSize: '12px',
-                    pointerEvents: 'none',
-                    transform: 'translate(-50%, -100%)',
-                    marginTop: '-15px', // Move up slightly more to clear the arrow
-                    minWidth: '150px'
-                }}
-            >
-                <div className="font-bold mb-2 border-b border-gray-300 pb-1">
-                    {typeof tooltip.data.time === 'string'
-                        ? tooltip.data.time
-                        : (tooltip.data.time as any).year
-                            ? `${(tooltip.data.time as any).year}-${(tooltip.data.time as any).month}-${(tooltip.data.time as any).day}`
-                            : new Date(tooltip.data.time as number * 1000).toLocaleString()}
+            if (currentRange) {
+                chartRef.current.timeScale().setVisibleLogicalRange({
+                    from: currentRange.from + addedCount,
+                    to: currentRange.to + addedCount,
+                });
+            }
+        }
+        else {
+            seriesRef.current.setData(data);
+        }
+
+        prevDataLengthRef.current = currentDataLength;
+    }, [data]);
+
+    return (
+        <div ref={chartContainerRef} style={{ width: '100%', position: 'relative' }}>
+            {tooltip && (
+                <div
+                    className="text-gray-900" // Force dark text
+                    style={{
+                        position: 'absolute',
+                        left: tooltip.x,
+                        top: tooltip.y,
+                        zIndex: 20,
+                        backgroundColor: 'rgba(255, 255, 255, 0.95)', // Slightly more opaque
+                        border: '1px solid #999', // Darker border
+                        borderRadius: '4px',
+                        padding: '8px',
+                        boxShadow: '0 4px 6px rgba(0,0,0,0.2)', // Stronger shadow
+                        fontSize: '12px',
+                        pointerEvents: 'none',
+                        transform: 'translate(-50%, -100%)',
+                        marginTop: '-15px', // Move up slightly more to clear the arrow
+                        minWidth: '150px'
+                    }}
+                >
+                    <div className="font-bold mb-2 border-b border-gray-300 pb-1">
+                        {typeof tooltip.data.time === 'string'
+                            ? tooltip.data.time
+                            : (tooltip.data.time as any).year
+                                ? `${(tooltip.data.time as any).year}-${(tooltip.data.time as any).month}-${(tooltip.data.time as any).day}`
+                                : new Date(tooltip.data.time as number * 1000).toLocaleString()}
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                        <span className="text-gray-600 font-semibold">Open:</span>
+                        <span className="font-mono text-right">{tooltip.data.open.toFixed(2)}</span>
+                        <span className="text-gray-600 font-semibold">High:</span>
+                        <span className="font-mono text-right">{tooltip.data.high.toFixed(2)}</span>
+                        <span className="text-gray-600 font-semibold">Low:</span>
+                        <span className="font-mono text-right">{tooltip.data.low.toFixed(2)}</span>
+                        <span className="text-gray-600 font-semibold">Close:</span>
+                        <span className="font-mono text-right">{tooltip.data.close.toFixed(2)}</span>
+                    </div>
                 </div>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-                    <span className="text-gray-600 font-semibold">Open:</span>
-                    <span className="font-mono text-right">{tooltip.data.open.toFixed(2)}</span>
-                    <span className="text-gray-600 font-semibold">High:</span>
-                    <span className="font-mono text-right">{tooltip.data.high.toFixed(2)}</span>
-                    <span className="text-gray-600 font-semibold">Low:</span>
-                    <span className="font-mono text-right">{tooltip.data.low.toFixed(2)}</span>
-                    <span className="text-gray-600 font-semibold">Close:</span>
-                    <span className="font-mono text-right">{tooltip.data.close.toFixed(2)}</span>
-                </div>
-            </div>
-        )}
-    </div>
-);
+            )}
+        </div>
+    );
 };
