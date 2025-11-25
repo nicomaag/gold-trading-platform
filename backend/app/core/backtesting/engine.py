@@ -38,6 +38,12 @@ class BacktestEngine:
         )
         if not candles:
             return BacktestResult()
+        
+        # Commit data and metrics to database immediately after loading
+        # This allows subsequent backtests to use the cached data
+        if db:
+            await db.commit()
+            print(f"✅ Committed {len(candles)} candles and metrics to database")
 
         # 2. Init Strategy
         strategy = strategy_class(symbol, timeframe, params)

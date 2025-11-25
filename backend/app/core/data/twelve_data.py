@@ -392,8 +392,9 @@ class TwelveDataProvider(DataProvider):
                                 )
                                 await db.execute(stmt)
                             
-                            await db.commit()
-                            print(f"💾 Saved {len(new_candles)} candles to DB")
+                            # Don't commit here - let the parent transaction commit
+                            # This prevents blocking the session during long operations
+                            print(f"💾 Staged {len(new_candles)} candles for DB insert")
                     
                     except Exception as e:
                         print(f"❌ Error fetching data: {e}")
