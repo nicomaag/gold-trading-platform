@@ -130,9 +130,15 @@ export default function MetricsPage() {
                 />
                 <StatCard
                     icon={Activity}
-                    label="API Calls"
-                    value={metrics.api_calls}
+                    label="Session API Calls"
+                    value={metrics.total_api_requests}
                     color="bg-purple-500"
+                />
+                <StatCard
+                    icon={Database}
+                    label="All Time API Calls"
+                    value={metrics.api_calls}
+                    color="bg-indigo-500"
                 />
             </div>
 

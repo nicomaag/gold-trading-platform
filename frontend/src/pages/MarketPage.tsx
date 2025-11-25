@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { CandleChart } from '../components/CandleChart';
 import { type CandlestickData } from 'lightweight-charts';
 
@@ -9,28 +9,39 @@ export const MarketPage: React.FC = () => {
     const [timeframe, setTimeframe] = useState('1h');
     const [data, setData] = useState<CandlestickData[]>([]);
     const [loading, setLoading] = useState(false);
-    const [autoUpdate, setAutoUpdate] = useState(false);
+    const [loadingMore, setLoadingMore] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    const dataRef = useRef<CandlestickData[]>([]);
     const loadingRef = useRef(false);
-    const dataRangeRef = useRef<{ min: number; max: number } | null>(null);
 
-    const fetchDataForRange = async (startTime: number, endTime: number) => {
-        if (loadingRef.current) {
-            console.log('⏸️ Already loading, skipping request');
-            return;
-        }
+    // Update dataRef whenever data changes
+    useEffect(() => {
+        dataRef.current = data;
+    }, [data]);
+
+    const fetchData = useCallback(async (isLoadMore = false) => {
+        if (loadingRef.current) return;
 
         loadingRef.current = true;
+        if (isLoadMore) {
+            setLoadingMore(true);
+        } else {
+            setLoading(true);
+        }
         setError(null);
 
         try {
-            const startDate = new Date(startTime * 1000).toISOString();
-            const endDate = new Date(endTime * 1000).toISOString();
+            let url = `http://localhost:8000/api/market/candles?symbol=${symbol}&timeframe=${timeframe}&limit=500`;
 
-            const url = `http://localhost:8000/api/market/candles?symbol=${symbol}&timeframe=${timeframe}&start=${startDate}&end=${endDate}&limit=5000`;
-
-            console.log(`🌐 Fetching data for visible range: ${startDate} to ${endDate}`);
+            if (isLoadMore && dataRef.current.length > 0) {
+                const oldestTime = dataRef.current[0].time as number;
+                const endDate = new Date(oldestTime * 1000).toISOString();
+                url += `&end=${endDate}`;
+                console.log(`📥 Loading more data before ${endDate}`);
+            } else {
+                console.log(`🔄 Initial load for ${symbol} ${timeframe}`);
+            }
 
             const response = await fetch(url);
             if (!response.ok) {
@@ -39,7 +50,7 @@ export const MarketPage: React.FC = () => {
             const rawData = await response.json();
 
             if (rawData.length === 0) {
-                console.log('📭 No data available for this range');
+                console.log('⚠️ No data returned');
                 return;
             }
 
@@ -53,120 +64,37 @@ export const MarketPage: React.FC = () => {
 
             chartData.sort((a, b) => (a.time as number) - (b.time as number));
 
-            // Merge with existing data
-            setData(prev => {
-                const existingTimes = new Set(prev.map(d => d.time as number));
-                const uniqueNewData = chartData.filter(d => !existingTimes.has(d.time as number));
-                const combined = [...prev, ...uniqueNewData];
-                combined.sort((a, b) => (a.time as number) - (b.time as number));
+            if (isLoadMore) {
+                setData(prev => {
+                    const existingTimes = new Set(prev.map(d => d.time as number));
+                    const uniqueNewData = chartData.filter(d => !existingTimes.has(d.time as number));
+                    const combined = [...uniqueNewData, ...prev];
+                    combined.sort((a, b) => (a.time as number) - (b.time as number));
 
-                console.log(`✅ Loaded ${rawData.length} candles. Total in chart: ${combined.length}`);
+                    console.log(`✅ Loaded ${uniqueNewData.length} older candles. Total: ${combined.length}`);
+                    return combined;
+                });
+            } else {
+                console.log(`✅ Set initial data: ${chartData.length} candles`);
+                setData(chartData);
+            }
 
-                // Update data range
-                if (combined.length > 0) {
-                    dataRangeRef.current = {
-                        min: combined[0].time as number,
-                        max: combined[combined.length - 1].time as number
-                    };
-                }
-
-                return combined;
-            });
         } catch (err: any) {
             setError(err.message);
-            console.error('❌ Error:', err);
+            console.error('❌ Error fetching data:', err);
         } finally {
             loadingRef.current = false;
-        }
-    };
-
-    const handleVisibleRangeChange = (fromTime: number, toTime: number) => {
-        // Check if we need to load more data
-        const currentRange = dataRangeRef.current;
-
-        if (!currentRange) {
-            // No data yet, load initial range
-            fetchDataForRange(fromTime, toTime);
-            return;
-        }
-
-        // Calculate buffer (load data before we actually need it)
-        const rangeSize = toTime - fromTime;
-        const buffer = rangeSize * 0.5; // 50% buffer
-
-        // Check if we're approaching the edges
-        if (fromTime < currentRange.min + buffer) {
-            // Need older data
-            const newStart = fromTime - rangeSize;
-            const newEnd = currentRange.min;
-            console.log(`⬅️ Loading older data: ${new Date(newStart * 1000).toISOString()} to ${new Date(newEnd * 1000).toISOString()}`);
-            fetchDataForRange(newStart, newEnd);
-        }
-
-        if (toTime > currentRange.max - buffer) {
-            // Need newer data
-            const newStart = currentRange.max;
-            const newEnd = toTime + rangeSize;
-            console.log(`➡️ Loading newer data: ${new Date(newStart * 1000).toISOString()} to ${new Date(newEnd * 1000).toISOString()}`);
-            fetchDataForRange(newStart, newEnd);
-        }
-    };
-
-    const loadInitialData = async () => {
-        setLoading(true);
-        setError(null);
-
-        try {
-            const url = `http://localhost:8000/api/market/candles?symbol=${symbol}&timeframe=${timeframe}&limit=1000`;
-
-            console.log(`🌐 Loading initial data`);
-
-            const response = await fetch(url);
-            if (!response.ok) {
-                throw new Error('Failed to fetch data');
-            }
-            const rawData = await response.json();
-
-            const chartData: CandlestickData[] = rawData.map((d: any) => ({
-                time: new Date(d.time).getTime() / 1000,
-                open: d.open,
-                high: d.high,
-                low: d.low,
-                close: d.close,
-            }));
-
-            chartData.sort((a, b) => (a.time as number) - (b.time as number));
-
-            if (chartData.length > 0) {
-                dataRangeRef.current = {
-                    min: chartData[0].time as number,
-                    max: chartData[chartData.length - 1].time as number
-                };
-                console.log(`✅ Loaded ${chartData.length} initial candles`);
-            }
-
-            setData(chartData);
-        } catch (err: any) {
-            setError(err.message);
-            console.error('❌ Error:', err);
-        } finally {
             setLoading(false);
+            setLoadingMore(false);
         }
-    };
-
-    useEffect(() => {
-        loadInitialData();
     }, [symbol, timeframe]);
 
+    // Initial load
     useEffect(() => {
-        let interval: NodeJS.Timeout;
-        if (autoUpdate) {
-            interval = setInterval(() => {
-                loadInitialData();
-            }, 5000);
-        }
-        return () => clearInterval(interval);
-    }, [autoUpdate, symbol, timeframe]);
+        setData([]); // Clear data on symbol/timeframe change
+        dataRef.current = [];
+        fetchData(false);
+    }, [fetchData]);
 
     return (
         <div className="p-6">
@@ -196,24 +124,8 @@ export const MarketPage: React.FC = () => {
                         </select>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                        <label className="flex items-center cursor-pointer">
-                            <div className="relative">
-                                <input
-                                    type="checkbox"
-                                    className="sr-only"
-                                    checked={autoUpdate}
-                                    onChange={(e) => setAutoUpdate(e.target.checked)}
-                                />
-                                <div className={`block w-10 h-6 rounded-full ${autoUpdate ? 'bg-green-500' : 'bg-gray-300'}`}></div>
-                                <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition ${autoUpdate ? 'transform translate-x-4' : ''}`}></div>
-                            </div>
-                            <span className="ml-2 text-sm font-medium text-gray-700">Auto Update</span>
-                        </label>
-                    </div>
-
                     <button
-                        onClick={loadInitialData}
+                        onClick={() => fetchData(false)}
                         className="bg-blue-600 text-white px-4 py-1 rounded hover:bg-blue-700 text-sm"
                         disabled={loading}
                     >
@@ -234,10 +146,16 @@ export const MarketPage: React.FC = () => {
                 ) : (
                     <CandleChart
                         data={data}
-                        onVisibleRangeChange={handleVisibleRangeChange}
+                        onLoadMore={() => fetchData(true)}
                     />
                 )}
             </div>
+
+            {loadingMore && (
+                <div className="text-center text-sm text-gray-500 mt-2">
+                    Loading older data...
+                </div>
+            )}
         </div>
     );
 };

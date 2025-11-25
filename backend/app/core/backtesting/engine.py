@@ -32,9 +32,9 @@ class BacktestEngine:
         db: 'AsyncSession' = None
     ) -> BacktestResult:
         # 1. Fetch Data from data provider
-        # Request max available data (Twelve Data free tier limit is 5000)
+        # Use full date range - provider will use cached data and only fetch missing ranges
         candles = await self.data_provider.get_historical_candles(
-            symbol, timeframe, start, end, limit=5000, db=db
+            symbol, timeframe, start, end, limit=10000, db=db
         )
         if not candles:
             return BacktestResult()

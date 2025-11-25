@@ -108,12 +108,12 @@ async def get_candles_bulk(
 
 
 @router.get("/market/metrics")
-async def get_cache_metrics():
+async def get_cache_metrics(db: AsyncSession = Depends(get_db)):
     """Get cache performance metrics."""
     provider = get_data_provider()
     
     # Check if provider has get_cache_metrics method
     if hasattr(provider, 'get_cache_metrics'):
-        return provider.get_cache_metrics()
+        return await provider.get_cache_metrics(db)
     else:
         return {"error": "Cache metrics not available for this provider"}

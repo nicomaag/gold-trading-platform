@@ -2,44 +2,12 @@ import aiohttp
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
 import asyncio
-import json
-import os
-from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 from sqlalchemy.dialects.sqlite import insert
 from .base import DataProvider
 from app.models.market_data import MarketData
-
-
-# Metrics file path
-METRICS_FILE = Path("cache_metrics.json")
-
-# Load metrics from file if exists
-def load_metrics() -> Dict[str, int]:
-    if METRICS_FILE.exists():
-        try:
-            with open(METRICS_FILE, 'r') as f:
-                return json.load(f)
-        except:
-            pass
-    return {
-        "cache_hits": 0,
-        "cache_misses": 0,
-        "partial_cache_hits": 0,
-        "api_calls": 0,
-    }
-
-# Save metrics to file
-def save_metrics(metrics: Dict[str, int]):
-    try:
-        with open(METRICS_FILE, 'w') as f:
-            json.dump(metrics, f, indent=2)
-    except Exception as e:
-        print(f"⚠️ Failed to save metrics: {e}")
-
-# Global cache metrics (module-level, persists across provider instances)
-CACHE_METRICS = load_metrics()
+from app.models.cache_metrics import CacheMetrics
 
 
 class TwelveDataProvider(DataProvider):
@@ -136,20 +104,86 @@ class TwelveDataProvider(DataProvider):
         
         return gaps
     
-    def get_cache_metrics(self) -> Dict[str, Any]:
-        """Get cache performance metrics from global metrics dict."""
-        total_requests = CACHE_METRICS["cache_hits"] + CACHE_METRICS["cache_misses"] + CACHE_METRICS["partial_cache_hits"]
-        hit_rate = (CACHE_METRICS["cache_hits"] / total_requests * 100) if total_requests > 0 else 0
-        partial_hit_rate = (CACHE_METRICS["partial_cache_hits"] / total_requests * 100) if total_requests > 0 else 0
+    async def _increment_metric(self, db: AsyncSession, metric_key: str, increment: int = 1):
+        """
+        Atomically increment a metric in the database using upsert.
+        This is best-effort and will not raise exceptions to avoid interfering with main operations.
+        """
+        if not db:
+            return
+        
+        try:
+            # Use upsert to handle concurrent inserts
+            from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+            
+            stmt = sqlite_insert(CacheMetrics).values(
+                metric_key=metric_key,
+                metric_value=increment,
+                updated_at=datetime.utcnow()
+            )
+            
+            # On conflict, increment the existing value
+            stmt = stmt.on_conflict_do_update(
+                index_elements=['metric_key'],
+                set_={
+                    'metric_value': CacheMetrics.metric_value + increment,
+                    'updated_at': datetime.utcnow()
+                }
+            )
+            
+            await db.execute(stmt)
+            # Don't commit or flush - let the parent transaction handle it
+        except Exception as e:
+            # Silently fail to avoid interfering with main operations
+            pass
+    
+    async def _get_metric(self, db: AsyncSession, metric_key: str) -> int:
+        """Get a metric value from the database."""
+        if not db:
+            return 0
+        
+        try:
+            result = await db.execute(
+                select(CacheMetrics).where(CacheMetrics.metric_key == metric_key)
+            )
+            metric = result.scalar_one_or_none()
+            return metric.metric_value if metric else 0
+        except Exception as e:
+            print(f"⚠️ Failed to get metric {metric_key}: {e}")
+            return 0
+    
+    async def get_cache_metrics(self, db: AsyncSession = None) -> Dict[str, Any]:
+        """Get cache performance metrics from database."""
+        if not db:
+            return {
+                "error": "Database session required for metrics",
+                "cache_hits": 0,
+                "cache_misses": 0,
+                "partial_cache_hits": 0,
+                "total_requests": 0,
+                "hit_rate_percent": 0,
+                "partial_hit_rate_percent": 0,
+                "api_calls": 0,
+                "total_api_requests": self.request_count
+            }
+        
+        cache_hits = await self._get_metric(db, "cache_hits")
+        cache_misses = await self._get_metric(db, "cache_misses")
+        partial_cache_hits = await self._get_metric(db, "partial_cache_hits")
+        api_calls = await self._get_metric(db, "api_calls")
+        
+        total_requests = cache_hits + cache_misses + partial_cache_hits
+        hit_rate = (cache_hits / total_requests * 100) if total_requests > 0 else 0
+        partial_hit_rate = (partial_cache_hits / total_requests * 100) if total_requests > 0 else 0
         
         return {
-            "cache_hits": CACHE_METRICS["cache_hits"],
-            "cache_misses": CACHE_METRICS["cache_misses"],
-            "partial_cache_hits": CACHE_METRICS["partial_cache_hits"],
+            "cache_hits": cache_hits,
+            "cache_misses": cache_misses,
+            "partial_cache_hits": partial_cache_hits,
             "total_requests": total_requests,
             "hit_rate_percent": round(hit_rate, 2),
             "partial_hit_rate_percent": round(partial_hit_rate, 2),
-            "api_calls": CACHE_METRICS["api_calls"],
+            "api_calls": api_calls,
             "total_api_requests": self.request_count
         }
     
@@ -287,12 +321,8 @@ class TwelveDataProvider(DataProvider):
         
         if len(db_data) == 0:
             # No data in DB, fetch entire range
-            CACHE_METRICS["cache_misses"] += 1
-            save_metrics(CACHE_METRICS)
-            if start and end:
-                fetch_ranges.append((start, end))
-            else:
-                fetch_ranges.append((None, None))
+            await self._increment_metric(db, "cache_misses")
+            fetch_ranges.append((start, end))
         else:
             # Check for gaps at start, middle, and end
             db_start = db_data[0].timestamp
@@ -311,11 +341,14 @@ class TwelveDataProvider(DataProvider):
                 has_gaps = True
             
             if len(db_data) > 1 and (start or end):
-                middle_gaps = self._detect_middle_gaps(db_data, timeframe)
-                if middle_gaps:
-                    fetch_ranges.extend(middle_gaps)
-                    print(f"🔍 Found {len(middle_gaps)} middle gap(s)")
-                    has_gaps = True
+                # Disable middle gap detection for now as it triggers on weekends
+                # and causes excessive API calls hitting rate limits.
+                # middle_gaps = self._detect_middle_gaps(db_data, timeframe)
+                # if middle_gaps:
+                #     fetch_ranges.extend(middle_gaps)
+                #     print(f"🔍 Found {len(middle_gaps)} middle gap(s)")
+                #     has_gaps = True
+                pass
             
             # If no explicit range but we have less than requested limit
             if not start and not end:
@@ -328,18 +361,16 @@ class TwelveDataProvider(DataProvider):
             
             # Update metrics
             if has_gaps:
-                CACHE_METRICS["partial_cache_hits"] += 1
+                await self._increment_metric(db, "partial_cache_hits")
             else:
-                CACHE_METRICS["cache_hits"] += 1
-            save_metrics(CACHE_METRICS)
+                await self._increment_metric(db, "cache_hits")
         
         # Fetch missing data from API
         if fetch_ranges:
             async with self.lock:
                 for fetch_start, fetch_end in fetch_ranges:
                     try:
-                        CACHE_METRICS["api_calls"] += 1
-                        save_metrics(CACHE_METRICS)
+                        await self._increment_metric(db, "api_calls")
                         new_candles = await self._fetch_from_api(
                             symbol, timeframe, fetch_start, fetch_end, limit
                         )

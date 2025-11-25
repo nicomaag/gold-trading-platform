@@ -3,7 +3,6 @@ import { createChart, ColorType, CandlestickSeries, type IChartApi, type ISeries
 
 interface CandleChartProps {
     data: CandlestickData[];
-    onVisibleRangeChange?: (from: number, to: number) => void;
     colors?: {
         backgroundColor?: string;
         lineColor?: string;
@@ -11,20 +10,22 @@ interface CandleChartProps {
         areaTopColor?: string;
         areaBottomColor?: string;
     };
+    onLoadMore?: () => void;
 }
 
-export const CandleChart: React.FC<CandleChartProps> = ({ data, onVisibleRangeChange, colors = {} }) => {
+export const CandleChart: React.FC<CandleChartProps> = ({ data, colors = {}, onLoadMore }) => {
     const chartContainerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<IChartApi | null>(null);
     const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
-    const lastRangeRef = useRef<{ from: number; to: number } | null>(null);
-    const rangeChangeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const prevDataLengthRef = useRef<number>(0);
+    const isInitialLoadRef = useRef<boolean>(true);
 
     const {
         backgroundColor = 'white',
         textColor = 'black',
     } = colors;
 
+    // Initialize Chart
     useEffect(() => {
         if (!chartContainerRef.current) return;
 
@@ -45,17 +46,84 @@ export const CandleChart: React.FC<CandleChartProps> = ({ data, onVisibleRangeCh
                 vertLines: { color: '#e1e1e1' },
                 horzLines: { color: '#e1e1e1' },
             },
+            timeScale: {
+                timeVisible: true,
+                secondsVisible: false,
+            }
         });
-
-        chart.timeScale().fitContent();
 
         const newSeries = chart.addSeries(CandlestickSeries, {
             upColor: '#26a69a',
             downColor: '#ef5350',
             borderVisible: false,
             wickUpColor: '#26a69a',
+            wickDownColor: '#ef5350',
+        });
+
+        chartRef.current = chart;
+        seriesRef.current = newSeries;
+
+        // Subscribe to visible logical range changes for infinite scroll
+        chart.timeScale().subscribeVisibleLogicalRangeChange((newVisibleLogicalRange) => {
+            if (newVisibleLogicalRange && onLoadMore) {
+                // If we are near the start (left side) of the data, trigger load more
+                // Using a threshold of 50 candles to trigger earlier
+                if (newVisibleLogicalRange.from < 50) {
+                    onLoadMore();
+                }
+            }
+        });
+
+        window.addEventListener('resize', handleResize);
+
+        return () => {
+            window.removeEventListener('resize', handleResize);
+            chart.remove();
+        };
+    }, [backgroundColor, textColor]); // Re-create chart only if colors change (rare)
+
+    // Handle Data Updates
+    useEffect(() => {
+        if (!seriesRef.current || !chartRef.current) return;
+
+        const currentDataLength = data.length;
+        const prevDataLength = prevDataLengthRef.current;
+
+        // If data is empty, just return
+        if (currentDataLength === 0) return;
+
+        // Case 1: Initial Load
+        if (prevDataLength === 0) {
+            seriesRef.current.setData(data);
+            chartRef.current.timeScale().fitContent();
+            isInitialLoadRef.current = false;
         }
-}, [data]);
+        // Case 2: Prepending Data (Loading History)
+        else if (currentDataLength > prevDataLength) {
+            // We assume data was prepended. 
+            // To maintain the scroll position, we need to shift the visible range 
+            // by the number of new candles added to the left.
+
+            const addedCount = currentDataLength - prevDataLength;
+            const currentRange = chartRef.current.timeScale().getVisibleLogicalRange();
+
+            seriesRef.current.setData(data);
+
+            if (currentRange) {
+                // Shift the range to keep the user looking at the same candles
+                chartRef.current.timeScale().setVisibleLogicalRange({
+                    from: currentRange.from + addedCount,
+                    to: currentRange.to + addedCount,
+                });
+            }
+        }
+        // Case 3: Reset or other updates
+        else {
+            seriesRef.current.setData(data);
+        }
+
+        prevDataLengthRef.current = currentDataLength;
+    }, [data]);
 
     return (
         <div ref={chartContainerRef} style={{ width: '100%', position: 'relative' }} />
