@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Activity, TrendingUp, Database, Zap } from 'lucide-react';
+import { Tooltip } from '../components/Tooltip';
 
 interface CacheMetrics {
     cache_hits: number;
@@ -65,17 +66,22 @@ export default function MetricsPage() {
         icon: Icon,
         label,
         value,
-        color
+        color,
+        tooltip
     }: {
         icon: any;
         label: string;
         value: string | number;
         color: string;
+        tooltip: string;
     }) => (
         <div className="bg-white rounded-lg shadow p-6">
             <div className="flex items-center justify-between">
                 <div>
-                    <p className="text-sm text-gray-600 mb-1">{label}</p>
+                    <div className="flex items-center mb-1">
+                        <p className="text-sm text-gray-600">{label}</p>
+                        <Tooltip content={tooltip} />
+                    </div>
                     <p className="text-2xl font-bold text-gray-900">{value}</p>
                 </div>
                 <div className={`p-3 rounded-full ${color}`}>
@@ -115,30 +121,35 @@ export default function MetricsPage() {
                     label="Total Requests"
                     value={metrics.total_requests}
                     color="bg-blue-500"
+                    tooltip="Total number of data requests received by the backend from the UI or backtest engine."
                 />
                 <StatCard
                     icon={Zap}
                     label="Cache Hit Rate"
                     value={`${metrics.hit_rate_percent}%`}
                     color="bg-green-500"
+                    tooltip="Percentage of requests served entirely from the local database cache without calling the Twelve Data API."
                 />
                 <StatCard
                     icon={TrendingUp}
                     label="Partial Hit Rate"
                     value={`${metrics.partial_hit_rate_percent}%`}
                     color="bg-yellow-500"
+                    tooltip="Percentage of requests where some data was cached, but gaps had to be filled from the API."
                 />
                 <StatCard
                     icon={Activity}
                     label="Session API Calls"
                     value={metrics.total_api_requests}
                     color="bg-purple-500"
+                    tooltip="Total number of calls made to the Twelve Data API in this session."
                 />
                 <StatCard
                     icon={Database}
                     label="All Time API Calls"
                     value={metrics.api_calls}
                     color="bg-indigo-500"
+                    tooltip="Total accumulated API calls stored in the database."
                 />
             </div>
 

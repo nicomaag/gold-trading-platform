@@ -283,11 +283,6 @@ class TwelveDataProvider(DataProvider):
         4. Upsert into DB
         5. Return complete dataset from DB
         """
-        if not db:
-            print("⚠️ No DB session provided, fetching directly from API")
-            async with self.lock:
-                return await self._fetch_from_api(symbol, timeframe, start, end, limit)
-        
         # Query existing data from DB
         query = select(MarketData).where(
             and_(
@@ -336,6 +331,7 @@ class TwelveDataProvider(DataProvider):
             
             if start and db_start > start:
                 gap = db_start - start
+                print(f"🔍 Start Gap Check: Requested {start}, DB Start {db_start}, Gap {gap}, Tolerance {GAP_TOLERANCE}")
                 if gap > GAP_TOLERANCE:
                     fetch_ranges.append((start, db_start))
                     print(f"📉 Gap at start: {start} to {db_start} (gap: {gap})")
@@ -345,6 +341,7 @@ class TwelveDataProvider(DataProvider):
             
             if end and db_end < end:
                 gap = end - db_end
+                print(f"🔍 End Gap Check: Requested {end}, DB End {db_end}, Gap {gap}, Tolerance {GAP_TOLERANCE}")
                 if gap > GAP_TOLERANCE:
                     fetch_ranges.append((db_end, end))
                     print(f"📈 Gap at end: {db_end} to {end} (gap: {gap})")
