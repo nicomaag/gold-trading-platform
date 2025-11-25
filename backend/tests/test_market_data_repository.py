@@ -159,14 +159,14 @@ async def test_partial_load_extends_end(test_db, mock_api_response):
     """
     Test: Partial load extends end
     Given: DB has data from T1 to T2
-    When: Request data from T1 to T3 (where T3 > T2)
-    Then: API called for [T2, T3], new data saved, complete [T1, T3] returned
+    When: Request data from T0 to T3 (where gaps > 48h)
+    Then: API called for gaps, new data saved, complete range returned
     """
-    # Pre-populate DB with older data
+    # Pre-populate DB with older data (Jan 5)
     candle1 = MarketData(
         symbol="XAUUSD",
         timeframe="1h",
-        timestamp=datetime(2025, 1, 1, 10, 0),
+        timestamp=datetime(2025, 1, 5, 10, 0),
         open=1990.0,
         high=2000.0,
         low=1980.0,
@@ -184,11 +184,14 @@ async def test_partial_load_extends_end(test_db, mock_api_response):
         mock_response.json = AsyncMock(return_value=mock_api_response)
         mock_get.return_value.__aenter__.return_value = mock_response
         
+        # Request range with > 48h gaps
+        # Start gap: Jan 1 to Jan 5 (> 48h)
+        # End gap: Jan 5 to Jan 10 (> 48h)
         result = await provider.get_historical_candles(
             symbol="XAUUSD",
             timeframe="1h",
-            start=datetime(2025, 1, 1, 9, 0),
-            end=datetime(2025, 1, 1, 13, 0),
+            start=datetime(2025, 1, 1, 10, 0),
+            end=datetime(2025, 1, 10, 10, 0),
             limit=100,
             db=test_db
         )

@@ -330,15 +330,27 @@ class TwelveDataProvider(DataProvider):
             
             has_gaps = False
             
+            # Tolerance for gaps (e.g. weekends/holidays/market hours)
+            # If gap is less than 48 hours, assume it's due to market closure and don't fetch
+            GAP_TOLERANCE = timedelta(hours=48)
+            
             if start and db_start > start:
-                fetch_ranges.append((start, db_start))
-                print(f"📉 Gap at start: {start} to {db_start}")
-                has_gaps = True
+                gap = db_start - start
+                if gap > GAP_TOLERANCE:
+                    fetch_ranges.append((start, db_start))
+                    print(f"📉 Gap at start: {start} to {db_start} (gap: {gap})")
+                    has_gaps = True
+                else:
+                    print(f"⏭️ Ignoring start gap of {gap} (within tolerance)")
             
             if end and db_end < end:
-                fetch_ranges.append((db_end, end))
-                print(f"📈 Gap at end: {db_end} to {end}")
-                has_gaps = True
+                gap = end - db_end
+                if gap > GAP_TOLERANCE:
+                    fetch_ranges.append((db_end, end))
+                    print(f"📈 Gap at end: {db_end} to {end} (gap: {gap})")
+                    has_gaps = True
+                else:
+                    print(f"⏭️ Ignoring end gap of {gap} (within tolerance)")
             
             if len(db_data) > 1 and (start or end):
                 # Disable middle gap detection for now as it triggers on weekends

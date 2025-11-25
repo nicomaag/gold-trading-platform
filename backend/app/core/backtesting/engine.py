@@ -40,10 +40,13 @@ class BacktestEngine:
             return BacktestResult()
         
         # Commit data and metrics to database immediately after loading
-        # This allows subsequent backtests to use the cached data
+        # Then close the session to release the database lock
+        # The simulation doesn't need database access, so we can free it for other requests
         if db:
             await db.commit()
+            await db.close()
             print(f"✅ Committed {len(candles)} candles and metrics to database")
+            print(f"🔓 Released database session - metrics endpoint now available")
 
         # 2. Init Strategy
         strategy = strategy_class(symbol, timeframe, params)
@@ -61,7 +64,13 @@ class BacktestEngine:
         trades: List[Trade] = []
         equity_curve = []
         
-        for candle in candles:
+        import asyncio
+        
+        for i, candle in enumerate(candles):
+            # Yield control to event loop every 100 candles to allow other requests (metrics) to run
+            if i % 100 == 0:
+                await asyncio.sleep(0)
+                
             # 0. Check SL/TP execution FIRST (Intra-candle price action)
             if position != 0:
                 executed_price = None
