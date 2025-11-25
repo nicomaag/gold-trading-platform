@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { createChart, ColorType, CandlestickSeries, type IChartApi, type ISeriesApi, type CandlestickData, type LogicalRange } from 'lightweight-charts';
+import { createChart, ColorType, CandlestickSeries, type IChartApi, type ISeriesApi, type CandlestickData, type LogicalRange, type SeriesMarker, type Time } from 'lightweight-charts';
 
 interface CandleChartProps {
     data: CandlestickData[];
@@ -19,6 +19,12 @@ export const CandleChart: React.FC<CandleChartProps> = ({ data, colors = {}, onL
     const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
     const prevDataLengthRef = useRef<number>(0);
     const isInitialLoadRef = useRef<boolean>(true);
+
+    const [tooltip, setTooltip] = React.useState<{
+        x: number;
+        y: number;
+        data: CandlestickData;
+    } | null>(null);
 
     const {
         backgroundColor = 'white',
@@ -66,66 +72,106 @@ export const CandleChart: React.FC<CandleChartProps> = ({ data, colors = {}, onL
         // Subscribe to visible logical range changes for infinite scroll
         chart.timeScale().subscribeVisibleLogicalRangeChange((newVisibleLogicalRange) => {
             if (newVisibleLogicalRange && onLoadMore) {
-                // If we are near the start (left side) of the data, trigger load more
-                // Using a threshold of 50 candles to trigger earlier
                 if (newVisibleLogicalRange.from < 50) {
                     onLoadMore();
                 }
             }
         });
 
-        window.addEventListener('resize', handleResize);
+        // Handle clicks for tooltip
+        chart.subscribeClick((param) => {
+            if (
+                param.point === undefined ||
+                !param.time ||
+                        }
+                    ]);
+                }
+            }
+        });
 
-        return () => {
-            window.removeEventListener('resize', handleResize);
-            chart.remove();
-        };
+window.addEventListener('resize', handleResize);
+
+return () => {
+    window.removeEventListener('resize', handleResize);
+    chart.remove();
+};
     }, [backgroundColor, textColor]); // Re-create chart only if colors change (rare)
 
-    // Handle Data Updates
-    useEffect(() => {
-        if (!seriesRef.current || !chartRef.current) return;
+// Handle Data Updates
+useEffect(() => {
+    if (!seriesRef.current || !chartRef.current) return;
 
-        const currentDataLength = data.length;
-        const prevDataLength = prevDataLengthRef.current;
+    const currentDataLength = data.length;
+    const prevDataLength = prevDataLengthRef.current;
 
-        // If data is empty, just return
-        if (currentDataLength === 0) return;
+    if (currentDataLength === 0) return;
 
-        // Case 1: Initial Load
-        if (prevDataLength === 0) {
-            seriesRef.current.setData(data);
-            chartRef.current.timeScale().fitContent();
-            isInitialLoadRef.current = false;
+    if (prevDataLength === 0) {
+        seriesRef.current.setData(data);
+        chartRef.current.timeScale().fitContent();
+        isInitialLoadRef.current = false;
+    }
+    else if (currentDataLength > prevDataLength) {
+        const addedCount = currentDataLength - prevDataLength;
+        const currentRange = chartRef.current.timeScale().getVisibleLogicalRange();
+
+        seriesRef.current.setData(data);
+
+        if (currentRange) {
+            chartRef.current.timeScale().setVisibleLogicalRange({
+                from: currentRange.from + addedCount,
+                to: currentRange.to + addedCount,
+            });
         }
-        // Case 2: Prepending Data (Loading History)
-        else if (currentDataLength > prevDataLength) {
-            // We assume data was prepended. 
-            // To maintain the scroll position, we need to shift the visible range 
-            // by the number of new candles added to the left.
+    }
+    else {
+        seriesRef.current.setData(data);
+    }
 
-            const addedCount = currentDataLength - prevDataLength;
-            const currentRange = chartRef.current.timeScale().getVisibleLogicalRange();
+    prevDataLengthRef.current = currentDataLength;
+}, [data]);
 
-            seriesRef.current.setData(data);
-
-            if (currentRange) {
-                // Shift the range to keep the user looking at the same candles
-                chartRef.current.timeScale().setVisibleLogicalRange({
-                    from: currentRange.from + addedCount,
-                    to: currentRange.to + addedCount,
-                });
-            }
-        }
-        // Case 3: Reset or other updates
-        else {
-            seriesRef.current.setData(data);
-        }
-
-        prevDataLengthRef.current = currentDataLength;
-    }, [data]);
-
-    return (
-        <div ref={chartContainerRef} style={{ width: '100%', position: 'relative' }} />
-    );
+return (
+    <div ref={chartContainerRef} style={{ width: '100%', position: 'relative' }}>
+        {tooltip && (
+            <div
+                className="text-gray-900" // Force dark text
+                style={{
+                    position: 'absolute',
+                    left: tooltip.x,
+                    top: tooltip.y,
+                    zIndex: 20,
+                    backgroundColor: 'rgba(255, 255, 255, 0.95)', // Slightly more opaque
+                    border: '1px solid #999', // Darker border
+                    borderRadius: '4px',
+                    padding: '8px',
+                    boxShadow: '0 4px 6px rgba(0,0,0,0.2)', // Stronger shadow
+                    fontSize: '12px',
+                    pointerEvents: 'none',
+                    transform: 'translate(-50%, -100%)',
+                    marginTop: '-15px', // Move up slightly more to clear the arrow
+                    minWidth: '150px'
+                }}
+            >
+                <div className="font-bold mb-2 border-b border-gray-300 pb-1">
+                    {typeof tooltip.data.time === 'string'
+                        ? tooltip.data.time
+                        : (tooltip.data.time as any).year
+                            ? `${(tooltip.data.time as any).year}-${(tooltip.data.time as any).month}-${(tooltip.data.time as any).day}`
+                            : new Date(tooltip.data.time as number * 1000).toLocaleString()}
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                    <span className="text-gray-600 font-semibold">Open:</span>
+                    <span className="font-mono text-right">{tooltip.data.open.toFixed(2)}</span>
+                    <span className="text-gray-600 font-semibold">High:</span>
+                    <span className="font-mono text-right">{tooltip.data.high.toFixed(2)}</span>
+                    <span className="text-gray-600 font-semibold">Low:</span>
+                    <span className="font-mono text-right">{tooltip.data.low.toFixed(2)}</span>
+                    <span className="text-gray-600 font-semibold">Close:</span>
+                    <span className="font-mono text-right">{tooltip.data.close.toFixed(2)}</span>
+                </div>
+            </div>
+        )}
+    </div>
+);
 };
